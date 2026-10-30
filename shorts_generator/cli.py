@@ -39,8 +39,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-json", default=None, help="Write the full result JSON to this path")
     parser.add_argument("--min-duration", type=float, default=20, help="Minimum clip seconds")
     parser.add_argument("--max-duration", type=float, default=90, help="Maximum clip seconds")
-    parser.add_argument("--render-plan", help="Render edited review JSON without calling an LLM")
-    parser.add_argument("--review-only", action="store_true", help="Select clips and export JSON without rendering")
+    review_group = parser.add_mutually_exclusive_group()
+    review_group.add_argument("--render-plan", help="Render edited review JSON without calling an LLM")
+    review_group.add_argument("--review-only", action="store_true", help="Select clips and export JSON without rendering")
     parser.add_argument("--framing", choices=["face", "fit", "center"], default="face")
     parser.add_argument("--caption-color", choices=["yellow", "green"], default="yellow")
     parser.add_argument("--highlight-every", type=int, choices=[4, 5], default=4)
@@ -100,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     _print_summary(result, args.mode)
 
     if args.output_json:
+        from pathlib import Path
+        Path(args.output_json).parent.mkdir(parents=True, exist_ok=True)
         with open(args.output_json, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2)
         print(f"\nFull JSON written to {args.output_json}")
