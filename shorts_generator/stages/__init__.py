@@ -13,7 +13,7 @@ from typing import Any
 
 from ..pipeline import Pipeline
 from .download import download_youtube, download_youtube_local
-from .highlights import get_highlights
+from .highlights.editorial import select_clips
 from .llm import call_local_llm, call_muapi_llm
 from .render import crop_highlights, crop_highlights_local
 from .transcribe import transcribe, transcribe_local
@@ -24,14 +24,14 @@ _MODES = {
         mode="api",
         download=download_youtube,
         transcribe=transcribe,
-        rank=partial(get_highlights, llm_fn=call_muapi_llm),
+        rank=partial(select_clips, llm_fn=call_muapi_llm),
         render=crop_highlights,
     ),
     "local": lambda: Pipeline(
         mode="local",
         download=download_youtube_local,
         transcribe=transcribe_local,
-        rank=partial(get_highlights, llm_fn=call_local_llm),
+        rank=partial(select_clips, llm_fn=call_local_llm),
         render=crop_highlights_local,
     ),
 }

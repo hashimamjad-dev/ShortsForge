@@ -32,8 +32,13 @@ class Pipeline:
         aspect_ratio: str = "9:16",
         download_format: str = "720",
         language: Optional[str] = None,
+        review_only: bool = False,
     ) -> PipelineResult:
         """Execute download -> transcribe -> rank -> render and collect results."""
+        if num_clips < 1:
+            raise ValueError("num_clips must be positive")
+        if aspect_ratio not in ("9:16", "1:1", "4:5", "16:9"):
+            raise ValueError("Unsupported aspect ratio")
         source_ref = self.download(source, download_format)
 
         transcript = self.transcribe(source_ref, language)
@@ -48,16 +53,16 @@ class Pipeline:
 
         top = sorted(highlights, key=lambda h: int(h.get("score", 0)), reverse=True)[:num_clips]
         print(
-            f"[pipeline/{self.mode}] rendering {len(top)} of {len(highlights)} candidates",
+            f"[pipeline/{self.mode}] {'reviewing' if review_only else 'rendering'} {len(top)} of {len(highlights)} candidates",
             flush=True,
         )
-        shorts: List[Short] = self.render(source_ref, top, aspect_ratio)
+        shorts: List[Short] = [] if review_only else self.render(source_ref, top, aspect_ratio)
 
         return {
             "mode": self.mode,
             "source_video_url": source_ref,
             "transcript": transcript,
-            "highlights": highlights,
+            "highlights": [{**h, "selected": h in top} for h in highlights],
             "shorts": shorts,
         }
 
@@ -68,7 +73,10 @@ def generate_shorts(
     aspect_ratio: str = "9:16",
     download_format: str = "720",
     language: Optional[str] = None,
-    mode: str = "api",
+    mode: str = "local",
+    min_duration: float = 20,
+    max_duration: float = 90,
+    review_only: bool = False,
 ) -> PipelineResult:
     """Run the full pipeline and return a structured result.
 
@@ -86,10 +94,16 @@ def generate_shorts(
     """
     from .stages import build_pipeline
 
-    return build_pipeline(mode).run(
+    from functools import partial
+    if not 0 < min_duration <= max_duration:
+        raise ValueError("Duration limits must satisfy 0 < min <= max")
+    pipeline = build_pipeline(mode)
+    pipeline.rank = partial(pipeline.rank, min_duration=min_duration, max_duration=max_duration)
+    return pipeline.run(
         source,
         num_clips=num_clips,
         aspect_ratio=aspect_ratio,
         download_format=download_format,
         language=language,
+        review_only=review_only,
     )

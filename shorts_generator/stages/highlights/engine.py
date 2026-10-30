@@ -14,6 +14,7 @@ Pipeline:
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Dict, List
 
@@ -94,14 +95,14 @@ def _parse_json_loose(raw: str) -> Dict:
 def _coerce_float(value: object, default: float = 0.0) -> float:
     try:
         return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
 def _coerce_int(value: object, default: int = 0) -> int:
     try:
         return int(float(value))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
@@ -118,7 +119,7 @@ def _sanitize_highlights(raw_highlights: object, duration: float) -> List[Highli
 
         start = _coerce_float(item.get("start_time"), default=-1.0)
         end = _coerce_float(item.get("end_time"), default=-1.0)
-        if start < 0 or end <= start:
+        if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start:
             continue
 
         if max_end != float("inf"):
@@ -175,8 +176,8 @@ def chunk_transcript(transcript: Transcript) -> List[Transcript]:
         ]
         if chunk_segs:
             chunk = dict(transcript)
-            chunk["segments"] = chunk_segs
-            chunk["duration"] = end - start
+            chunk["segments"] = [{**s, "start": s["start"] - start, "end": s["end"] - start} for s in chunk_segs]
+            chunk["duration"] = max(s["end"] for s in chunk_segs) - start
             chunk["_offset"] = start  # type: ignore[typeddict-unknown-key]
             chunks.append(chunk)  # type: ignore[arg-type]
         start += CHUNK_SIZE_SECONDS - CHUNK_OVERLAP_SECONDS
@@ -250,7 +251,7 @@ def dedupe_highlights(highlights: List[Highlight]) -> List[Highlight]:
             latest_start = max(h_start, float(k["start_time"]))
             earliest_end = min(h_end, float(k["end_time"]))
             overlap = earliest_end - latest_start
-            if overlap > 0 and overlap > 0.5 * h_dur:
+            if overlap > 0.5 * min(h_dur, float(k["end_time"]) - float(k["start_time"])):
                 overlapping = True
                 break
         if not overlapping:
@@ -260,6 +261,8 @@ def dedupe_highlights(highlights: List[Highlight]) -> List[Highlight]:
 
 def get_highlights(transcript: Transcript, num_clips: int, llm_fn: LLMFn) -> List[Highlight]:
     """Rank highlights across a transcript and return them deduped, best first."""
+    if num_clips < 1:
+        raise ValueError("num_clips must be positive")
     duration = transcript.get("duration", 0)
     content_info = detect_content_type(transcript, llm_fn=llm_fn)
     print(
@@ -282,8 +285,26 @@ def get_highlights(transcript: Transcript, num_clips: int, llm_fn: LLMFn) -> Lis
                 h["start_time"] = float(h["start_time"]) + offset
                 h["end_time"] = float(h["end_time"]) + offset
                 all_highlights.append(h)
-        return dedupe_highlights(all_highlights)
+        return dedupe_highlights(align_highlights(all_highlights, transcript))
 
     text = build_transcript_text(transcript)
     highlights = rank_chunk(text, content_info, duration, num_clips=num_clips, llm_fn=llm_fn)
-    return dedupe_highlights(highlights)
+    return dedupe_highlights(align_highlights(highlights, transcript))
+
+
+def align_highlights(highlights: List[Highlight], transcript: Transcript) -> List[Highlight]:
+    """Snap nearby model boundaries to real speech boundaries, avoiding clipped words."""
+    segments = transcript.get("segments", [])
+    if not segments:
+        return []
+    starts = [float(s["start"]) for s in segments]
+    ends = [float(s["end"]) for s in segments]
+    result = []
+    for h in highlights:
+        start = min(starts, key=lambda t: abs(t - h["start_time"]))
+        end = min(ends, key=lambda t: abs(t - h["end_time"]))
+        if abs(start - h["start_time"]) > 3 or abs(end - h["end_time"]) > 3:
+            continue
+        if end > start:
+            result.append({**h, "start_time": start, "end_time": end})
+    return result

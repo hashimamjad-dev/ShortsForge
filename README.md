@@ -1,325 +1,153 @@
-<div align="center">
+# ShortsForge
 
-# 🔥 ShortsForge
+Turn long recordings into coherent, captioned short videos on your own machine.
 
-**Turn long-form video into ranked, vertical, subtitle-ready short-form clips — on your own machine.**
+ShortsForge transcribes speech, asks a local or hosted language model to choose
+complete passages, and renders them with word-timed captions. Selection favors
+clear setup, useful content, and a resolved ending. Scores are editorial model
+estimates, not predictions of views.
 
-Drop in a YouTube link (or a local file) and get back the most viral-worthy moments,
-auto-cropped to 9:16, face-tracked, and captioned — ready for TikTok, Reels, and Shorts.
+## Quick start
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-[![Local first](https://img.shields.io/badge/inference-local%20%7C%20offline-8A2BE2?style=flat-square)](#-architecture)
-[![Whisper](https://img.shields.io/badge/Whisper-large--v3-000000?style=flat-square)](#-whisper-setup)
-[![Ollama](https://img.shields.io/badge/LLM-Ollama-ffffff?style=flat-square&logo=ollama&logoColor=black)](#-ollama-setup)
-[![CUDA](https://img.shields.io/badge/GPU-CUDA%20%2F%20NVENC-76B900?style=flat-square&logo=nvidia&logoColor=white)](#gpu-acceleration)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-
-</div>
-
----
-
-## 📖 Overview
-
-**ShortsForge** is an open-source pipeline that finds the best moments in a
-long video and renders them as polished vertical clips. It runs **fully on your
-machine** in local mode — local transcription (Whisper), local LLM ranking
-(Ollama), local face tracking (MediaPipe), and local encoding (FFmpeg/NVENC) —
-with **no per-clip credits, no watermarks, and no uploads of your footage**. A
-hosted **API mode** is also available for a zero-setup path.
-
-The whole system is built as a chain of **interchangeable stages**, so any part
-— the downloader, the transcriber, the highlight engine, the renderer — can be
-swapped without touching the rest.
-
-## ✨ Features
-
-- **🎬 Long-form in, vertical out** — any YouTube URL or local file → N ranked 9:16 clips.
-- **🖥️ Local & offline** — transcription, LLM ranking, face tracking, and encoding all run on-device.
-- **🔀 Two modes** — `local` (self-hosted, private) or `api` (hosted MuAPI, zero setup).
-- **🧠 Virality-aware ranking** — clips scored on hooks, emotional peaks, opinion bombs, revelations, conflict, quotables, story peaks, and practical value.
-- **📈 Score + hook + reason** — every clip ships with a 0–100 viral score, an opening hook line, and a one-line rationale.
-- **🎤 Whisper transcription** — `faster-whisper` (CPU or CUDA), up to **large-v3**, with SRT caching.
-- **🤖 Pluggable highlight LLM** — Ollama (offline), OpenAI, or Gemini via a single env var.
-- **🎯 Speaker-aware reframing** — MediaPipe Tasks BlazeFace + a velocity-smoothed dominant-face tracker keep the talker centred.
-- **💬 Burned-in subtitles** — styled captions auto-timed to each clip.
-- **⚡ GPU acceleration** — automatic CUDA decode + NVENC encode, with a seamless CPU fallback.
-- **🧩 Long-video aware** — videos over 30 min are auto-chunked with overlap so nothing is missed.
-- **♻️ Smart dedupe** — overlapping highlights collapse to the highest score.
-- **🧰 CLI + Python library** — run from the shell or `import generate_shorts(...)`.
-- **📦 JSON output** — `--output-json` dumps the transcript, every candidate, and final clip paths.
-
-## 🧱 Architecture
-
-ShortsForge is a linear pipeline of independently replaceable stages. Each stage
-has a contract (a `Protocol` in [`shorts_generator/protocols.py`](shorts_generator/protocols.py))
-and is wired per mode in [`shorts_generator/stages/`](shorts_generator/stages/).
-
-```
-        ┌────────────┐   ┌──────────────┐   ┌────────────────┐   ┌────────────────┐
- source │ Downloader │──▶│ Transcriber  │──▶│ Highlight      │──▶│ Renderer       │──▶ shorts
-  URL / │            │   │              │   │ Engine (LLM)   │   │  ├─ Subtitles   │
-  file  └────────────┘   └──────────────┘   └────────────────┘   │  ├─ Face Track  │
-                                                                  │  ├─ Effects*    │
-                                                                  │  ├─ Encoder     │
-                                                                  │  └─ Uploader*   │
-                                                                  └────────────────┘
-                                                        (* planned — see the roadmap)
-```
-
-| Stage | `--mode local` | `--mode api` |
-|---|---|---|
-| **Downloader** | `yt-dlp` (or a local file path) | MuAPI `/youtube-download` |
-| **Transcriber** | `faster-whisper` (CPU/CUDA) | MuAPI `/openai-whisper` |
-| **Highlight Engine** | Ollama / OpenAI / Gemini | MuAPI `gpt-5-mini` |
-| **Renderer** | FFmpeg cut → MediaPipe face-track → subtitle burn → NVENC/x264 encode | MuAPI `/autocrop` |
-
-```
-shorts_generator/
-├── protocols.py        # stage contracts (interchangeable-module seams)
-├── pipeline.py         # mode-agnostic orchestrator
-├── types.py            # Transcript / Highlight / Short / PipelineResult
-├── cli.py              # command-line interface
-├── config.py           # env-driven settings
-├── clients/muapi.py    # MuAPI submit + poll client
-└── stages/
-    ├── __init__.py     # registry → build_pipeline(mode)
-    ├── download/       # muapi.py · ytdlp.py
-    ├── transcribe/     # muapi.py · whisper.py
-    ├── highlights/     # engine.py  (LLM-agnostic ranking)
-    ├── llm/            # muapi.py · local.py (openai/gemini/ollama)
-    └── render/         # muapi.py · local/{encoding,face_tracking,subtitles}.py
-```
-
-## 🚀 Quick start
+Use Python 3.10–3.12 and install FFmpeg with the `subtitles` filter on your PATH.
 
 ```bash
-git clone https://github.com/hashimkk47/ShortsForge.git
+git clone https://github.com/hashimamjad-dev/ShortsForge.git
 cd ShortsForge
-python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -r requirements-local.txt                 # local mode deps
-cp .env.example .env                                  # then edit .env
-
-# Fully local: yt-dlp + Whisper + Ollama + FFmpeg
-python main.py "https://youtu.be/VIDEO_ID" --mode local --num-clips 3
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+pip install -e '.[local]'
+ollama pull qwen3:4b-instruct
 ```
 
-Rendered clips land in `./output/short_01.mp4`, `short_02.mp4`, …
-
-## 🛠️ Installation
-
-### Prerequisites
-
-- **Python 3.10+**
-- **Local mode:** [`ffmpeg`](https://ffmpeg.org/download.html) on your `PATH`, plus a highlight LLM ([Ollama](#-ollama-setup) recommended).
-- **API mode:** a [MuAPI](https://muapi.ai) key (no local deps required).
-- **Optional:** an NVIDIA GPU + drivers for CUDA transcription and NVENC encoding.
-
-### 🪟 Windows setup
-
-```powershell
-git clone https://github.com/hashimkk47/ShortsForge.git
-cd ShortsForge
-py -3.11 -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements-local.txt
-copy .env.example .env
-```
-
-Install FFmpeg and confirm it's on your `PATH`:
-
-```powershell
-winget install Gyan.FFmpeg      # or: choco install ffmpeg
-ffmpeg -version
-```
-
-### 🐧 Linux setup
+Start Ollama, then run:
 
 ```bash
-git clone https://github.com/hashimkk47/ShortsForge.git
-cd ShortsForge
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-local.txt
-cp .env.example .env
-
-sudo apt update && sudo apt install -y ffmpeg   # Debian/Ubuntu
-ffmpeg -version
+python -m shorts_generator video.mp4 --num-clips 3 --output-json result.json
 ```
 
-### 🤖 Ollama setup
+A YouTube URL can replace the local filename. First use downloads Whisper and
+face detection models; subsequent local runs can use cached models offline.
+Ollama is the default provider. The 4B model is a compact starting point; see
+[validation](VALIDATION.md) for measured results and remaining validation gates.
 
-Ollama runs the highlight-ranking LLM **fully offline**.
+Each render gets a separate directory under `output/`, with MP4 clips and ASS
+or SRT caption files. Failures are reported per clip in JSON and produce a
+nonzero CLI exit code. Existing runs are not overwritten.
 
-1. Install Ollama from [ollama.com](https://ollama.com/download).
-2. Pull a model and make sure the server is running:
-   ```bash
-   ollama pull qwen3:8b
-   ollama serve            # usually already running as a service
-   ```
-3. Point ShortsForge at it in `.env`:
-   ```ini
-   LLM_PROVIDER=ollama
-   OLLAMA_MODEL=qwen3:8b
-   OLLAMA_HOST=http://localhost:11434
-   ```
+## Captions and framing
 
-Prefer a hosted LLM instead? Set `LLM_PROVIDER=openai` (`OPENAI_API_KEY`) or
-`LLM_PROVIDER=gemini` (`GEMINI_API_KEY`).
+```bash
+python -m shorts_generator video.mp4 --min-duration 30 --max-duration 75 \
+  --caption-color green --highlight-every 5 --framing fit
+```
 
-### 🎤 Whisper setup
+- `--caption-color yellow|green`: accent color, default yellow.
+- `--highlight-every 4|5`: accent every fourth or fifth word, default fourth.
+- The spoken word is underlined using Whisper word timestamps. Captions use
+  short phrases with reading-length and pause breaks. Short word gaps retain
+  the phrase instead of flashing it off.
+- `--framing face`: track a stable dominant face; default for talking heads.
+- `--framing fit`: preserve the whole image with padding; useful for tutorials,
+  slides, multiple people, and screen recordings.
+- `--framing center`: crop around the image center without a face model.
+- `--aspect-ratio`: `9:16`, `1:1`, `4:5`, or `16:9`.
 
-Local transcription uses [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper)
-and is configured entirely through `.env`:
+Face tracking does not identify the active speaker from audio. Reframing can
+remove useful visual context; use fit mode when retaining the image matters.
+
+## Review before rendering
+
+```bash
+python -m shorts_generator video.mp4 --review-only --output-json plan.json
+python -m shorts_generator --render-plan plan.json --output-json rendered.json
+```
+
+The plan contains the transcript, candidate text, reasons, exact cut times, and
+`selected` flags. Edit clip times or set `selected` to `false` to exclude a
+candidate. Correct caption words in `transcript.segments[].words[].word`;
+segment text supplies the fallback SRT captions. Keep word timestamps intact
+unless deliberately correcting alignment. Rendering a plan validates intervals
+and reuses the edited transcript without another transcription or model call.
+The source video must remain at the recorded path.
+
+## Local and hosted language models
+
+Optional `.env` settings:
 
 ```ini
-LOCAL_WHISPER_MODEL=base       # tiny · base · small · medium · large-v3
-LOCAL_WHISPER_DEVICE=auto      # auto · cpu · cuda
+LLM_PROVIDER=ollama
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=qwen3:4b-instruct
+LOCAL_WHISPER_MODEL=base
+LOCAL_WHISPER_DEVICE=auto
+LOCAL_OUTPUT_DIR=output
 ```
 
-- **CPU:** `base` or `small` are fast and accurate enough for most talking-head content.
-- **GPU:** set `large-v3` for best accuracy (needs a capable NVIDIA GPU).
-- Transcripts are cached as a sidecar `.srt` next to the video and reused on re-runs.
+Whisper `base` is a lightweight baseline. Larger models can improve recognition
+at the cost of time and memory. Check names, technical terms, and multilingual
+speech before publishing. CPU transcription works without PyTorch. CUDA needs
+compatible runtime libraries; hardware encoding uses NVENC when available and
+retries with x264 on failure.
 
-<a id="gpu-acceleration"></a>
-#### GPU acceleration
+For LM Studio, llama.cpp, vLLM, or hosted Chat Completions endpoints:
 
-With `LOCAL_WHISPER_DEVICE=auto`, ShortsForge detects a working CUDA device and
-uses it for transcription (and NVENC for encoding), falling back to CPU/x264
-automatically if CUDA/NVENC aren't available. For CUDA Whisper, install a CUDA
-build of `torch` (see the note in `requirements-local.txt`).
-
-## 💡 Usage examples
-
-**Local mode (private, offline except an optional hosted LLM):**
-```bash
-python main.py "https://youtu.be/VIDEO_ID" --mode local --num-clips 5
+```ini
+LLM_PROVIDER=compatible
+LLM_BASE_URL=http://localhost:1234/v1
+LLM_MODEL=your-loaded-model
+# LLM_API_KEY=your-key-if-required
 ```
 
-**Straight from a local file — skip YouTube entirely:**
-```bash
-python main.py "/videos/podcast.mp4" --mode local
-python main.py "file:///videos/podcast.mp4" --mode local
-```
+The model must follow JSON instructions. Requests use bounded transcript
+windows; the model chooses sentence IDs, and code derives the cut timestamps.
+Invalid IDs and durations are rejected. Overlapping windows retain context,
+and overlapping candidates are deduplicated. No artificial rankings or clips
+are substituted when a provider fails or finds no suitable passage.
 
-**API mode (zero setup):**
-```bash
-python main.py "https://youtu.be/VIDEO_ID" --mode api --output-json result.json
-```
+The existing `openai` and `gemini` backends require their optional packages:
+`pip install -e '.[openai]'` or `pip install -e '.[gemini]'`, plus the respective
+API key in `.env`. Hosted providers receive transcript text. `--mode api` uses
+the separate MuAPI hosted media pipeline and requires `MUAPI_API_KEY`; local
+caption and framing options apply to local rendering only.
 
-**As a Python library:**
+## Python API
+
 ```python
 from shorts_generator import generate_shorts
-
-result = generate_shorts(
-    "/videos/podcast.mp4",
-    num_clips=5,
-    aspect_ratio="9:16",
-    mode="local",
-)
-for short in result["shorts"]:
-    print(short["score"], short["title"], short["clip_url"])
+result = generate_shorts('video.mp4', num_clips=3, min_duration=20,
+                         max_duration=90, mode='local')
+for clip in result['shorts']:
+    print(clip['title'], clip.get('clip_url'), clip.get('error'))
 ```
 
-**Swap a stage without touching the pipeline:**
-```python
-from shorts_generator.stages import build_pipeline
+Stages remain replaceable through `shorts_generator.stages.build_pipeline`.
 
-def my_uploader_renderer(source, highlights, aspect_ratio="9:16"):
-    ...  # your own renderer/uploader implementation
+## Development and verification
 
-pipe = build_pipeline("local", render=my_uploader_renderer)
-result = pipe.run("https://youtu.be/VIDEO_ID", num_clips=3)
-```
-
-**Batch a list of URLs:**
 ```bash
-xargs -a urls.txt -I{} python main.py "{}" --mode local
+python -m unittest discover -s tests -v
+python tests/render_smoke.py
+python tests/benchmark_model.py
 ```
 
-### CLI flags
+The first command runs deterministic tests; media decoding is tested when local
+dependencies are installed. The second runs an actual synthetic-media FFmpeg
+caption encode. The third calls a running Ollama model on a controlled editorial
+fixture. It is a narrow sanity check, not a comprehensive quality benchmark.
+[VALIDATION.md](VALIDATION.md) distinguishes tested behavior from open gates.
 
-| Flag | Default | Notes |
-|------|---------|-------|
-| `--mode` | `api` | `local` (on-device) or `api` (hosted MuAPI) |
-| `--num-clips` | `3` | How many shorts to render |
-| `--aspect-ratio` | `9:16` | `9:16`, `1:1`, `4:5`, or `16:9` |
-| `--format` | `720` | Source download resolution: `360`/`480`/`720`/`1080` |
-| `--language` | auto | Force transcription language code (e.g. `en`) |
-| `--output-json` | — | Dump the full result (transcript + all candidates) to a file |
+No model guarantees perfect cuts on all content. The review plan and editable
+captions are part of the workflow for producing dependable results.
 
-### Output
+## References and license
 
-```
-========================================================================
-Mode:          local
-Highlights:    7 candidates -> kept top 3
-========================================================================
+The stage architecture supports local download (yt-dlp), transcription
+(faster-whisper), selection (Ollama or compatible providers), reframing
+(MediaPipe), and encoding (FFmpeg). Reference projects studied for workflow
+ideas: [ClipsAI](https://github.com/ClipsAI/clipsai) and
+[FunClip](https://github.com/modelscope/FunClip). No source code was copied from
+these projects in this update. See [CREDITS.md](CREDITS.md) for existing credits.
 
-#1  score=92  124.3s -> 187.6s
-     title:  The one mistake that cost me $50K
-     hook:   "Nobody talks about this, but it killed my first startup..."
-     clip:   output/short_01.mp4
-```
-
-`--output-json` additionally writes `{mode, source_video_url, transcript,
-highlights[], shorts[]}` for downstream automation.
-
-## 🗺️ Roadmap
-
-Planned work, roughly in priority order:
-
-- [ ] **TikTok / CapCut-style animated subtitles**
-- [ ] **Karaoke word-by-word highlighting**
-- [ ] **ASS subtitle rendering** (rich styling beyond SRT)
-- [ ] **Active speaker detection** (audio-driven face selection)
-- [ ] **Multi-face tracking** (split/switch framing for conversations)
-- [ ] **Better clip ranking** (retrieval + reranking, per-platform tuning)
-- [ ] **B-roll insertion**
-- [ ] **Sound effects & transitions**
-- [ ] **Motion graphics** (lower-thirds, progress bars, zoom punches)
-- [ ] **Thumbnail generation**
-- [ ] **Upload automation** (the planned `Uploader` stage — TikTok/YouTube/Reels)
-- [ ] **Plugin system** (register third-party stage implementations)
-
-## ❓ FAQ
-
-**Is my video uploaded anywhere in local mode?**
-No. In `local` mode, download, transcription, ranking, face tracking, and
-encoding all run on your machine. The only optional network call is a hosted LLM
-if you choose `LLM_PROVIDER=openai`/`gemini` instead of Ollama.
-
-**Do I need a GPU?**
-No — everything works on CPU. A GPU makes transcription (CUDA) and encoding
-(NVENC) much faster; ShortsForge auto-detects and falls back gracefully.
-
-**"Whisper produced no segments."**
-The clip may have no detectable speech, or a hard-to-detect language. Pass
-`--language en` (or the correct ISO-639-1 code) to skip auto-detection.
-
-**"ffmpeg was not found on PATH."**
-Install FFmpeg (see the OS setup sections) and confirm `ffmpeg -version` works in
-the same shell you run ShortsForge from.
-
-**Which Whisper model should I use?**
-`base`/`small` on CPU for speed, `large-v3` on GPU for accuracy. Set it with
-`LOCAL_WHISPER_MODEL`.
-
-**Can I change what counts as a "highlight"?**
-Yes — edit the virality framework and prompts in
-[`shorts_generator/stages/highlights/engine.py`](shorts_generator/stages/highlights/engine.py).
-
-**Which aspect ratios are supported?**
-`9:16`, `1:1`, `4:5`, and `16:9`.
-
-## 🤝 Contributing
-
-Contributions are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)**. The
-stage-based design makes it easy to add a new downloader, transcriber, highlight
-LLM, or renderer without disturbing the rest of the pipeline.
-
-## 📄 License
-
-[MIT](LICENSE)
-
-> ⚠️ ShortsForge is under active development. Interfaces, stage APIs, and rendering features may change before the first stable release.
+[MIT license](LICENSE). Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -28,7 +28,8 @@ dependencies = [
 [project.optional-dependencies]
 local = [
     "yt-dlp>=2024.1.1",
-    "faster-whisper>=1.0.0",
+    "faster-whisper>=1.2.1,<2",
+    "av>=11,<16",
     "opencv-python>=4.8.0",
     "mediapipe>=0.10.9",
 ]
@@ -39,9 +40,9 @@ gemini = ["google-genai>=1.0.0"]
 shortsforge = "shorts_generator.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/hashimkk47/ShortsForge"
-Repository = "https://github.com/hashimkk47/ShortsForge"
-Issues = "https://github.com/hashimkk47/ShortsForge/issues"
+Homepage = "https://github.com/hashimamjad-dev/ShortsForge"
+Repository = "https://github.com/hashimamjad-dev/ShortsForge"
+Issues = "https://github.com/hashimamjad-dev/ShortsForge/issues"
 
 [tool.setuptools.packages.find]
 include = ["shorts_generator*"]
