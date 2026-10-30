@@ -172,3 +172,20 @@ def encode_video(
     ]
     _run_video_ffmpeg(cmd, "encoding the final video")
     return out_path
+
+
+def reframe(source: str, output: str, aspect_ratio: str, mode: str) -> str:
+    """Preserve all source content with padding, or explicitly center crop."""
+    width, height = output_size(aspect_ratio)
+    if mode == "fit":
+        vf = (f"scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
+              f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1")
+    elif mode == "center":
+        vf = (f"scale={width}:{height}:force_original_aspect_ratio=increase:force_divisible_by=2,"
+              f"crop={width}:{height},setsar=1")
+    else:
+        raise ValueError("Unsupported reframing mode")
+    _run_video_ffmpeg(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", source,
+                      "-vf", vf, *_video_encoder_args(), "-pix_fmt", "yuv420p", "-c:a", "copy", output],
+                     "reframing the clip")
+    return output

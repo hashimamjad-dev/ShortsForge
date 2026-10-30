@@ -16,6 +16,7 @@ import os
 import shutil
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import List, Optional
 
@@ -89,8 +90,14 @@ def crop_clip_local(
     _active_temp_dirs.add(os.path.abspath(partial_output))
     try:
         encoding.cut_subclip(source_path, start_time, end_time, cut_path)
-        face_tracking.crop_frames(cut_path, cropped_path, aspect_ratio)
-        encoding.mux_audio(cropped_path, cut_path, muxed_path)
+        framing = os.getenv("LOCAL_FRAMING", "face").lower()
+        if framing == "face":
+            face_tracking.crop_frames(cut_path, cropped_path, aspect_ratio)
+            encoding.mux_audio(cropped_path, cut_path, muxed_path)
+        elif framing in ("fit", "center"):
+            encoding.reframe(cut_path, muxed_path, aspect_ratio, framing)
+        else:
+            raise ValueError("LOCAL_FRAMING must be face, fit, or center")
 
         source_srt = subtitles.find_source_subtitles(source_path)
         subtitle_path = subtitles.word_captions(source_path, os.path.join(temp_dir, "captions.ass"), start_time, end_time, aspect_ratio)
@@ -102,6 +109,8 @@ def crop_clip_local(
             subtitles.burn_subtitles(muxed_path, subtitle_path, partial_output, aspect_ratio)
         else:
             encoding.encode_video(muxed_path, partial_output, aspect_ratio)
+        if subtitle_path:
+            shutil.copyfile(subtitle_path, str(Path(out_path).with_suffix(Path(subtitle_path).suffix)))
         os.replace(partial_output, out_path)
         return requested_out_path
     finally:
@@ -115,7 +124,7 @@ def crop_highlights_local(
     out_dir: Optional[str] = None,
 ) -> List[Short]:
     """Render local clips for highlights, keeping per-item failures isolated."""
-    out_dir = out_dir or LOCAL_OUTPUT_DIR
+    out_dir = out_dir or os.path.join(LOCAL_OUTPUT_DIR, f"{Path(source_path).stem}_{uuid.uuid4().hex[:8]}")
     os.makedirs(out_dir, exist_ok=True)
     results: List[Short] = []
     for index, highlight in enumerate(highlights, 1):

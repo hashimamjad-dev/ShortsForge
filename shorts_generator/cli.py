@@ -25,11 +25,11 @@ def build_parser() -> argparse.ArgumentParser:
         prog="shorts_generator",
         description="ShortsForge — AI long-form-to-shorts generator",
     )
-    parser.add_argument("url", help="YouTube URL, file:// URL, or local file path")
+    parser.add_argument("url", nargs="?", help="YouTube URL, file:// URL, or local file path")
     parser.add_argument(
         "--mode",
         choices=["api", "local"],
-        default="api",
+        default="local",
         help="api (MuAPI, hosted) or local (yt-dlp + faster-whisper + LLM + ffmpeg)",
     )
     parser.add_argument("--num-clips", type=int, default=3, help="How many shorts to render (default: 3)")
@@ -37,6 +37,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--format", default="720", help="Source download resolution: 360/480/720/1080 (default: 720)")
     parser.add_argument("--language", default=None, help="Force transcription language code, e.g. 'en' (default: auto)")
     parser.add_argument("--output-json", default=None, help="Write the full result JSON to this path")
+    parser.add_argument("--min-duration", type=float, default=20, help="Minimum clip seconds")
+    parser.add_argument("--max-duration", type=float, default=90, help="Maximum clip seconds")
+    parser.add_argument("--render-plan", help="Render edited review JSON without calling an LLM")
+    parser.add_argument("--review-only", action="store_true", help="Select clips and export JSON without rendering")
+    parser.add_argument("--framing", choices=["face", "fit", "center"], default="face")
+    parser.add_argument("--caption-color", choices=["yellow", "green"], default="yellow")
+    parser.add_argument("--highlight-every", type=int, choices=[4, 5], default=4)
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
 
@@ -62,15 +69,30 @@ def main(argv: list[str] | None = None) -> int:
     _configure_stdio()
     args = build_parser().parse_args(argv)
 
+    import os
+    os.environ["LOCAL_FRAMING"] = args.framing
+    os.environ["CAPTION_HIGHLIGHT_COLOR"] = args.caption_color
+    os.environ["CAPTION_HIGHLIGHT_EVERY"] = str(args.highlight_every)
+    if args.review_only and not args.output_json:
+        args.output_json = "clip-review.json"
     try:
-        result = generate_shorts(
-            source=args.url,
-            num_clips=args.num_clips,
-            aspect_ratio=args.aspect_ratio,
-            download_format=args.format,
-            language=args.language,
-            mode=args.mode,
-        )
+        if args.render_plan:
+            from .review import render_plan
+            result = render_plan(args.render_plan, args.aspect_ratio)
+        elif not args.url:
+            raise ValueError("Provide a source video or --render-plan")
+        else:
+            result = generate_shorts(
+                source=args.url,
+                num_clips=args.num_clips,
+                aspect_ratio=args.aspect_ratio,
+                download_format=args.format,
+                language=args.language,
+                mode=args.mode,
+                min_duration=args.min_duration,
+                max_duration=args.max_duration,
+                review_only=args.review_only,
+            )
     except Exception as exc:
         print(f"\nFAILED: {exc}", file=sys.stderr)
         return 1
@@ -82,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dump(result, f, indent=2)
         print(f"\nFull JSON written to {args.output_json}")
 
-    return 0 if result["shorts"] and all(s.get("clip_url") for s in result["shorts"]) else 1
+    return 0 if args.review_only or (result["shorts"] and all(s.get("clip_url") for s in result["shorts"])) else 1
 
 
 if __name__ == "__main__":

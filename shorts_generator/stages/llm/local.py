@@ -61,7 +61,7 @@ def call_ollama_llm(prompt: str) -> str:
     """Fully offline Ollama backend (``LLM_PROVIDER=ollama``)."""
     response = requests.post(
         f"{OLLAMA_HOST}/api/generate",
-        json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False, "format": "json", "options": {"temperature": 0.2}},
+        json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False, "format": "json", "options": {"temperature": 0.1, "num_ctx": 8192, "num_predict": 2048}},
         timeout=600,
     )
     response.raise_for_status()

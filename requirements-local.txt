@@ -2,7 +2,7 @@
 
 # Optional dependencies for --mode local (fully on-device pipeline).
 yt-dlp>=2024.1.1            # Downloader stage
-faster-whisper>=1.0.0      # Transcriber stage (CPU or CUDA)
+faster-whisper>=1.2.1,<2      # Transcriber stage (CPU or CUDA)
 opencv-python>=4.8.0       # Face-tracking stage: frame I/O
 mediapipe>=0.10.9          # Face-tracking stage: BlazeFace detector
 
@@ -16,3 +16,6 @@ google-genai>=1.0.0        # LLM_PROVIDER=gemini
 # torch>=2.0
 
 # ffmpeg must be installed separately and available on PATH.
+
+# faster-whisper 1.2 uses metadata_errors, removed in newer PyAV releases.
+av>=11,<16

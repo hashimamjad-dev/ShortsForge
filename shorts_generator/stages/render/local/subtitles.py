@@ -145,7 +145,7 @@ def word_captions(source_path: str, output_ass: str, clip_start: float,
     # Break on long pauses, punctuation, or five words, keeping reading load low.
     phrases, phrase = [], []
     for idx, w in enumerate(words):
-        if phrase and (w["start"] - phrase[-1][1]["end"] > .6 or len(phrase) >= 5):
+        if phrase and (w["start"] - phrase[-1][1]["end"] > .6 or len(phrase) >= 5 or sum(len(item[1]["word"]) + 1 for item in phrase) + len(w["word"]) > 32):
             phrases.append(phrase); phrase = []
         phrase.append((idx, w))
         if w["word"].endswith((".", "?", "!")):
@@ -155,7 +155,11 @@ def word_captions(source_path: str, output_ass: str, clip_start: float,
     for phrase in phrases:
         for active, (_, word) in enumerate(phrase):
             start = max(clip_start, word["start"]) - clip_start
-            end = min(clip_end, word["end"]) - clip_start
+            # Hold through short inter-word gaps instead of flashing off.
+            next_start = phrase[active+1][1]["start"] if active+1 < len(phrase) else word["end"]
+            end = min(clip_end, max(word["end"], min(next_start, word["end"] + .2))) - clip_start
+            if active+1 < len(phrase):
+                end = min(end, max(0.0, next_start - clip_start))
             if round(end*100) <= round(start*100):
                 continue
             text = " ".join(("{\\c" + accent + "}" if (i+1)%every == 0 else "{\\c&HFFFFFF&}") +
