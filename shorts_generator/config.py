@@ -30,7 +30,7 @@ POLL_TIMEOUT_SECONDS = float(os.getenv("MUAPI_POLL_TIMEOUT", "600"))
 # ---------------------------------------------------------------------------
 # Local mode — highlight LLM provider
 # ---------------------------------------------------------------------------
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").strip().lower()  # openai / gemini / ollama
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").strip().lower()  # openai / gemini / ollama
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()

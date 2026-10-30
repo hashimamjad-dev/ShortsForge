@@ -11,7 +11,17 @@ from __future__ import annotations
 from typing import List, Optional, TypedDict
 
 
-class Segment(TypedDict):
+class Word(TypedDict):
+    start: float
+    end: float
+    word: str
+
+
+class WordTiming(TypedDict, total=False):
+    words: List[Word]
+
+
+class Segment(WordTiming):
     """One timestamped span of transcribed speech."""
 
     start: float  # seconds from the start of the source video

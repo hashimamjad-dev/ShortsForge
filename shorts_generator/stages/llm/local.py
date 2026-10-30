@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import requests
+import os
 
 from ...config import (
     GEMINI_MODEL,
@@ -60,7 +61,7 @@ def call_ollama_llm(prompt: str) -> str:
     """Fully offline Ollama backend (``LLM_PROVIDER=ollama``)."""
     response = requests.post(
         f"{OLLAMA_HOST}/api/generate",
-        json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
+        json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False, "format": "json", "options": {"temperature": 0.2}},
         timeout=600,
     )
     response.raise_for_status()
@@ -70,6 +71,8 @@ def call_ollama_llm(prompt: str) -> str:
 def call_local_llm(prompt: str) -> str:
     """Dispatch to the configured local LLM provider."""
     provider = (LLM_PROVIDER or "openai").strip().lower()
+    if provider == "compatible":
+        return call_compatible_llm(prompt)
     if provider == "openai":
         return call_openai_llm(prompt)
     if provider == "gemini":
@@ -77,5 +80,18 @@ def call_local_llm(prompt: str) -> str:
     if provider == "ollama":
         return call_ollama_llm(prompt)
     raise RuntimeError(
-        f"Unknown LLM_PROVIDER={provider!r}. Use 'openai', 'gemini', or 'ollama'."
+        f"Unknown LLM_PROVIDER={provider!r}. Use 'openai', 'gemini', 'ollama', or 'compatible'."
     )
+
+
+def call_compatible_llm(prompt: str) -> str:
+    """LM Studio, llama.cpp, vLLM, or hosted Chat Completions servers."""
+    base = os.getenv("LLM_BASE_URL", "http://localhost:1234/v1").rstrip("/")
+    key = os.getenv("LLM_API_KEY", "")
+    response = requests.post(base + "/chat/completions",
+        headers={"Authorization": "Bearer " + key} if key else {},
+        json={"model": os.getenv("LLM_MODEL", "local-model"),
+              "messages": [{"role": "user", "content": prompt}], "temperature": 0.2},
+        timeout=600)
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"]

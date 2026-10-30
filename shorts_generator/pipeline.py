@@ -34,6 +34,10 @@ class Pipeline:
         language: Optional[str] = None,
     ) -> PipelineResult:
         """Execute download -> transcribe -> rank -> render and collect results."""
+        if num_clips < 1:
+            raise ValueError("num_clips must be positive")
+        if aspect_ratio not in ("9:16", "1:1", "4:5", "16:9"):
+            raise ValueError("Unsupported aspect ratio")
         source_ref = self.download(source, download_format)
 
         transcript = self.transcribe(source_ref, language)

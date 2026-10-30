@@ -19,6 +19,62 @@ auto-cropped to 9:16, face-tracked, and captioned — ready for TikTok, Reels, a
 
 ---
 
+## Word-timed captions and reliable clip timing
+
+Local rendering now supports short caption phrases with **every fourth or fifth
+word highlighted in yellow or green**, plus an underline on the spoken word.
+Timing comes from faster-whisper word alignment, rather than guessed durations.
+Older SRT-only inputs retain plain captions. The local pipeline needs FFmpeg
+with libass (the subtitles filter), Python 3.10–3.12 is recommended for media dependencies.
+
+```ini
+# .env: fully local ranking
+LLM_PROVIDER=ollama
+CAPTION_HIGHLIGHT_EVERY=4
+CAPTION_HIGHLIGHT_COLOR=yellow
+```
+
+Use `5` and `green` for the alternative caption style. Run:
+
+```bash
+python -m shorts_generator /path/to/video.mp4 --mode local --num-clips 3 --output-json result.json
+```
+
+**Other local or hosted models:** LM Studio, llama.cpp, vLLM, and services that
+implement Chat Completions can use the compatible backend:
+
+```ini
+LLM_PROVIDER=compatible
+LLM_BASE_URL=http://localhost:1234/v1
+LLM_MODEL=your-loaded-model
+# LLM_API_KEY=your-key-if-required
+```
+
+The model must follow JSON instructions and have enough context for a transcript
+window. Compatibility is with this API contract, not every model in existence.
+Ollama requests JSON output. Provider failures surface as errors; no fake clips
+or invented rankings are substituted.
+
+Long-video windows now use relative timestamps consistently, avoiding double
+offsets. Candidates with non-finite times are rejected, nearby boundaries snap
+to speech segments, and nested duplicates collapse to the highest score.
+Transcript caches preserve word timing and distinguish source paths, source
+changes, language, model, and VAD settings. The CLI exits unsuccessfully when a
+requested clip fails to render; inspect `shorts[].error` in the JSON result.
+
+**Quality limits:** ranking is a model estimate, not a prediction of views.
+Speech-boundary snapping cannot guarantee complete stories. Review clips before
+publishing, especially names, technical terms, multilingual speech, and crowded
+scenes. Face tracking follows a dominant face; it does not detect the active
+speaker from audio. First use downloads the Whisper and face detection models;
+offline use requires them to be cached first.
+
+**Verification:** `python -m unittest discover -s tests -v` runs deterministic
+regressions without downloading models or spending API credits. Run
+`python tests/render_smoke.py` with FFmpeg installed for a real synthetic-media
+caption encode. This smoke test does not validate transcription accuracy or
+subjective clip selection. No real-video/provider benchmark is included yet.
+
 ## 📖 Overview
 
 **ShortsForge** is an open-source pipeline that finds the best moments in a
@@ -39,7 +95,7 @@ swapped without touching the rest.
 - **🔀 Two modes** — `local` (self-hosted, private) or `api` (hosted MuAPI, zero setup).
 - **🧠 Virality-aware ranking** — clips scored on hooks, emotional peaks, opinion bombs, revelations, conflict, quotables, story peaks, and practical value.
 - **📈 Score + hook + reason** — every clip ships with a 0–100 viral score, an opening hook line, and a one-line rationale.
-- **🎤 Whisper transcription** — `faster-whisper` (CPU or CUDA), up to **large-v3**, with SRT caching.
+- **🎤 Whisper transcription** — `faster-whisper` (CPU or CUDA), up to **large-v3**, with JSON word-timing and SRT caching.
 - **🤖 Pluggable highlight LLM** — Ollama (offline), OpenAI, or Gemini via a single env var.
 - **🎯 Speaker-aware reframing** — MediaPipe Tasks BlazeFace + a velocity-smoothed dominant-face tracker keep the talker centred.
 - **💬 Burned-in subtitles** — styled captions auto-timed to each clip.
@@ -94,7 +150,7 @@ shorts_generator/
 ## 🚀 Quick start
 
 ```bash
-git clone https://github.com/hashimkk47/ShortsForge.git
+git clone https://github.com/hashimamjad-dev/ShortsForge.git
 cd ShortsForge
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements-local.txt                 # local mode deps
@@ -118,7 +174,7 @@ Rendered clips land in `./output/short_01.mp4`, `short_02.mp4`, …
 ### 🪟 Windows setup
 
 ```powershell
-git clone https://github.com/hashimkk47/ShortsForge.git
+git clone https://github.com/hashimamjad-dev/ShortsForge.git
 cd ShortsForge
 py -3.11 -m venv .venv
 .venv\Scripts\activate
@@ -136,7 +192,7 @@ ffmpeg -version
 ### 🐧 Linux setup
 
 ```bash
-git clone https://github.com/hashimkk47/ShortsForge.git
+git clone https://github.com/hashimamjad-dev/ShortsForge.git
 cd ShortsForge
 python3 -m venv .venv
 source .venv/bin/activate
@@ -179,7 +235,7 @@ LOCAL_WHISPER_DEVICE=auto      # auto · cpu · cuda
 
 - **CPU:** `base` or `small` are fast and accurate enough for most talking-head content.
 - **GPU:** set `large-v3` for best accuracy (needs a capable NVIDIA GPU).
-- Transcripts are cached as a sidecar `.srt` next to the video and reused on re-runs.
+- Transcripts and word timestamps are cached as JSON in the output directory, with an SRT companion.
 
 <a id="gpu-acceleration"></a>
 #### GPU acceleration
@@ -270,8 +326,8 @@ highlights[], shorts[]}` for downstream automation.
 Planned work, roughly in priority order:
 
 - [ ] **TikTok / CapCut-style animated subtitles**
-- [ ] **Karaoke word-by-word highlighting**
-- [ ] **ASS subtitle rendering** (rich styling beyond SRT)
+- [x] **Word-timed captions with accent words and spoken-word underline**
+- [x] **ASS subtitle rendering** (rich styling beyond SRT)
 - [ ] **Active speaker detection** (audio-driven face selection)
 - [ ] **Multi-face tracking** (split/switch framing for conversations)
 - [ ] **Better clip ranking** (retrieval + reranking, per-platform tuning)

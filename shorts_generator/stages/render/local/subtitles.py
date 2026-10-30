@@ -45,8 +45,10 @@ def _srt_timestamp(seconds: float) -> str:
 
 def find_source_subtitles(source_path: str) -> Optional[str]:
     """Find the sidecar SRT next to the source, or in the output cache dir."""
+    from ...transcribe.whisper import _transcript_cache_path
     filename = Path(source_path).with_suffix(".srt").name
     candidates = (
+        _transcript_cache_path(source_path),
         Path(source_path).with_suffix(".srt"),
         Path(LOCAL_OUTPUT_DIR) / filename,
     )
@@ -101,5 +103,64 @@ def burn_subtitles(
     """Burn styled subtitles into the final delivery encode."""
     escaped_path = _escape_subtitle_filter_path(subtitle_path)
     force_style = (style or _SUBTITLE_STYLE).replace("'", "\\'")
+    if Path(subtitle_path).suffix.lower() == ".ass":
+        return encode_video(in_path, out_path, aspect_ratio, f"subtitles='{escaped_path}'")
     subtitle_filter = f"subtitles='{escaped_path}':force_style='{force_style}'"
     return encode_video(in_path, out_path, aspect_ratio, subtitle_filter)
+
+
+def word_captions(source_path: str, output_ass: str, clip_start: float,
+                  clip_end: float, aspect_ratio: str) -> Optional[str]:
+    """Build short ASS phrases using measured Whisper word timestamps.
+
+    Every fourth/fifth word gets a persistent accent; the currently spoken word
+    is underlined. No timing is fabricated when word alignment is unavailable.
+    """
+    import json
+    from ...transcribe.whisper import _transcript_cache_path
+    from .encoding import output_size
+    cache = _transcript_cache_path(source_path).with_suffix(".json")
+    if not cache.exists():
+        return None
+    data = json.loads(cache.read_text(encoding="utf-8"))["transcript"]
+    every = int(os.getenv("CAPTION_HIGHLIGHT_EVERY", "4"))
+    color = os.getenv("CAPTION_HIGHLIGHT_COLOR", "yellow").lower()
+    if every not in (4, 5) or color not in ("yellow", "green"):
+        raise ValueError("Captions require CAPTION_HIGHLIGHT_EVERY=4 or 5 and COLOR=yellow or green")
+    accent = "&H00FFFF&" if color == "yellow" else "&H00FF00&"
+    words = [w for s in data["segments"] for w in s.get("words", [])
+             if w["end"] > clip_start and w["start"] < clip_end and w["end"] > w["start"] and w["word"].strip()]
+    if not words:
+        return None
+    width, height = output_size(aspect_ratio)
+    def stamp(t):
+        cs = max(0, round(t * 100))
+        return f"{cs//360000}:{cs//6000%60:02d}:{cs//100%60:02d}.{cs%100:02d}"
+    def safe(t):
+        return t.replace("\\", "＼").replace("{", "｛").replace("}", "｝").replace("\n", " ").replace("\r", " ")
+    lines = ["[Script Info]", "ScriptType: v4.00+", f"PlayResX: {width}", f"PlayResY: {height}", "WrapStyle: 0",
+             "[V4+ Styles]", "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+             f"Style: Default,Arial,{round(width/18)},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,60,60,{round(height*.16)},1",
+             "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+    # Break on long pauses, punctuation, or five words, keeping reading load low.
+    phrases, phrase = [], []
+    for idx, w in enumerate(words):
+        if phrase and (w["start"] - phrase[-1][1]["end"] > .6 or len(phrase) >= 5):
+            phrases.append(phrase); phrase = []
+        phrase.append((idx, w))
+        if w["word"].endswith((".", "?", "!")):
+            phrases.append(phrase); phrase = []
+    if phrase:
+        phrases.append(phrase)
+    for phrase in phrases:
+        for active, (_, word) in enumerate(phrase):
+            start = max(clip_start, word["start"]) - clip_start
+            end = min(clip_end, word["end"]) - clip_start
+            if round(end*100) <= round(start*100):
+                continue
+            text = " ".join(("{\\c" + accent + "}" if (i+1)%every == 0 else "{\\c&HFFFFFF&}") +
+                            ("{\\u1}" if j == active else "{\\u0}") + safe(w["word"])
+                            for j, (i, w) in enumerate(phrase))
+            lines.append(f"Dialogue: 0,{stamp(start)},{stamp(end)},Default,,0,0,0,,{text}")
+    Path(output_ass).write_text("\n".join(lines)+"\n", encoding="utf-8")
+    return output_ass

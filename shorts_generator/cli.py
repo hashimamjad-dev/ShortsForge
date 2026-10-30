@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dump(result, f, indent=2)
         print(f"\nFull JSON written to {args.output_json}")
 
-    return 0
+    return 0 if result["shorts"] and all(s.get("clip_url") for s in result["shorts"]) else 1
 
 
 if __name__ == "__main__":

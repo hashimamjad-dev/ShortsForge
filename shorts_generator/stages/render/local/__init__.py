@@ -93,8 +93,8 @@ def crop_clip_local(
         encoding.mux_audio(cropped_path, cut_path, muxed_path)
 
         source_srt = subtitles.find_source_subtitles(source_path)
-        subtitle_path = None
-        if source_srt:
+        subtitle_path = subtitles.word_captions(source_path, os.path.join(temp_dir, "captions.ass"), start_time, end_time, aspect_ratio)
+        if source_srt and not subtitle_path:
             subtitle_path = subtitles.offset_subtitles(
                 source_srt, clipped_srt, start_time, end_time
             )
