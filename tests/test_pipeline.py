@@ -1,4 +1,5 @@
 import json
+import importlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,7 +45,7 @@ class PipelineTests(unittest.TestCase):
             cache.write_text(json.dumps({'transcript':{'segments':[{'words':[
                 {'start':10+i*.3,'end':10+(i+1)*.3,'word':w}
                 for i,w in enumerate(['This','is','a','{test}','today'])]}]}}))
-            with patch('shorts_generator.stages.transcribe.whisper._transcript_cache_path',return_value=cache.with_suffix('.srt')):
+            with patch.object(importlib.import_module('shorts_generator.stages.transcribe.whisper'), '_transcript_cache_path',return_value=cache.with_suffix('.srt')):
                 for every,color,expected in [('4','yellow','&H00FFFF&'),('5','green','&H00FF00&')]:
                     with patch.dict('os.environ',CAPTION_HIGHLIGHT_EVERY=every,CAPTION_HIGHLIGHT_COLOR=color):
                         out=Path(tmp)/'clip.ass'
@@ -66,4 +67,5 @@ class PipelineTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 
